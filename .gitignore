@@ -1,5 +1,4 @@
 # COCO Dataset - Images and large files
-coco/
 coco/images/
 coco/images/train2014/
 coco/images/val2014/
