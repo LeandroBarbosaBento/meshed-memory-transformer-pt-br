@@ -1,0 +1,91 @@
+# COCO Dataset - Images and large files
+coco/
+coco/images/
+coco/images/train2014/
+coco/images/val2014/
+coco/images/test2014/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# HDF5 files (visual features)
+*.hdf5
+*.h5
+coco_detections.hdf5
+
+# Parquet files (raw data)
+*.parquet
+coco-captions-pt-br/
+
+# Pickle files (vocabularies, models)
+*.pkl
+vocab.pkl
+vocab_ptbr.pkl
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+m2release/
+
+# Conda
+*.conda
+.conda/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Model checkpoints and logs
+*.pth
+*.pt
+*.ckpt
+checkpoint/
+output_logs/
+saved_models/
+logs/
+
+# Temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large data files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# Stanford CoreNLP jar (large file)
+evaluation/stanford-corenlp-*.jar
+
+# Downloaded images
+coco2014/
+images/
+train2014/
+val2014/
+test2014/
