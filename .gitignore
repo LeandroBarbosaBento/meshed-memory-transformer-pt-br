@@ -20,11 +20,6 @@ coco_detections.hdf5
 *.parquet
 coco-captions-pt-br/
 
-# Pickle files (vocabularies, models)
-*.pkl
-vocab.pkl
-vocab_ptbr.pkl
-
 # Python cache
 __pycache__/
 *.py[cod]
