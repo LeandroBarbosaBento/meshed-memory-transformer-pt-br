@@ -1,0 +1,27 @@
+# Meshed-Memory Transformer Requirements
+# Updated for Python 3.6+
+
+# Core Deep Learning
+torch==1.1.0
+torchvision==0.3.0
+
+# NLP
+spacy==2.0.18
+
+# Data Processing
+h5py==2.10.0
+pycocotools==2.0.0
+numpy==1.16.4
+pillow==6.2.1
+
+# Utils
+tqdm==4.32.2
+termcolor==1.1.0
+
+# Logging
+tensorboard==1.14.0
+
+# Additional dependencies
+requests==2.22.0
+six==1.13.0
+cython==0.29.14
