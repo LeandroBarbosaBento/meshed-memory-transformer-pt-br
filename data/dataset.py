@@ -49,9 +49,9 @@ class Dataset(object):
         return len(self.examples)
 
     def __getattr__(self, attr):
-        if attr in self.fields:
-            for x in self.examples:
-                yield getattr(x, attr)
+        if 'fields' in self.__dict__ and attr in self.fields:
+            return (getattr(x, attr) for x in self.examples)
+        raise AttributeError(attr)
 
 
 class ValueDataset(Dataset):
@@ -243,7 +243,10 @@ class COCO(PairedDataset):
                 root = (roots[split]['img'],)
 
             if ids_dataset is None:
-                ids = list(coco_dataset.anns.keys())
+                # Coleta IDs de todos os COCO datasets da tupla
+                ids = []
+                for coco in coco_dataset:
+                    ids.extend(list(coco.anns.keys()))
             else:
                 ids = ids_dataset[split]
 

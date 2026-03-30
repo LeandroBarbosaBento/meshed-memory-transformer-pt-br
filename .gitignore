@@ -56,6 +56,7 @@ checkpoint/
 output_logs/
 saved_models/
 logs/
+tensorboard_logs/
 
 # Temporary files
 *.log

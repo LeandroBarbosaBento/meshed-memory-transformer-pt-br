@@ -165,7 +165,8 @@ if __name__ == '__main__':
                            remove_punctuation=True, nopoints=False)
 
     # Create the dataset
-    dataset = COCO(image_field, text_field, 'coco/images/', args.annotation_folder, args.annotation_folder)
+    # Note: usando id_root=None para usar todos os IDs das annotations (sem splits pré-definidos)
+    dataset = COCO(image_field, text_field, 'coco/images/', args.annotation_folder, id_root=None)
     train_dataset, val_dataset, test_dataset = dataset.splits
 
     if not os.path.isfile('vocab_%s.pkl' % args.exp_name):
@@ -178,7 +179,7 @@ if __name__ == '__main__':
     # Model and dataloaders
     encoder = MemoryAugmentedEncoder(3, 0, attention_module=ScaledDotProductAttentionMemory,
                                      attention_module_kwargs={'m': args.m})
-    decoder = MeshedDecoder(len(text_field.vocab), 54, 3, text_field.vocab.stoi['<pad>'])
+    decoder = MeshedDecoder(len(text_field.vocab), 62, 3, text_field.vocab.stoi['<pad>'])
     model = Transformer(text_field.vocab.stoi['<bos>'], encoder, decoder).to(device)
 
     dict_dataset_train = train_dataset.image_dictionary({'image': image_field, 'text': RawField()})
