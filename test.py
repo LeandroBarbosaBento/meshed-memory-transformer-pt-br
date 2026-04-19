@@ -46,6 +46,8 @@ if __name__ == '__main__':
     parser.add_argument('--workers', type=int, default=0)
     parser.add_argument('--features_path', type=str)
     parser.add_argument('--annotation_folder', type=str)
+    parser.add_argument('--vocab_path', type=str, default='vocab_m2_transformer.pkl')
+    parser.add_argument('--model_path', type=str, default='saved_models/m2_transformer_best.pth')
     args = parser.parse_args()
 
     print('Meshed-Memory Transformer Evaluation')
@@ -58,17 +60,17 @@ if __name__ == '__main__':
                            remove_punctuation=True, nopoints=False)
 
     # Create the dataset
-    dataset = COCO(image_field, text_field, 'coco/images/', args.annotation_folder, args.annotation_folder)
+    dataset = COCO(image_field, text_field, 'coco/images/', args.annotation_folder, id_root=None)
     _, _, test_dataset = dataset.splits
-    text_field.vocab = pickle.load(open('vocab.pkl', 'rb'))
+    text_field.vocab = pickle.load(open(args.vocab_path, 'rb'))
 
     # Model and dataloaders
     encoder = MemoryAugmentedEncoder(3, 0, attention_module=ScaledDotProductAttentionMemory,
                                      attention_module_kwargs={'m': 40})
-    decoder = MeshedDecoder(len(text_field.vocab), 54, 3, text_field.vocab.stoi['<pad>'])
+    decoder = MeshedDecoder(len(text_field.vocab), 62, 3, text_field.vocab.stoi['<pad>'])
     model = Transformer(text_field.vocab.stoi['<bos>'], encoder, decoder).to(device)
 
-    data = torch.load('meshed_memory_transformer.pth')
+    data = torch.load(args.model_path)
     model.load_state_dict(data['state_dict'])
 
     dict_dataset_test = test_dataset.image_dictionary({'image': image_field, 'text': RawField()})

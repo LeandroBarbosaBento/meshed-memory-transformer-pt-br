@@ -145,6 +145,8 @@ if __name__ == '__main__':
     parser.add_argument('--m', type=int, default=40)
     parser.add_argument('--head', type=int, default=8)
     parser.add_argument('--warmup', type=int, default=10000)
+    parser.add_argument('--lr_scst', type=float, default=5e-6,
+                        help='Learning rate para a fase SCST (RL). Default: 5e-6')
     parser.add_argument('--resume_last', action='store_true')
     parser.add_argument('--resume_best', action='store_true')
     parser.add_argument('--features_path', type=str)
@@ -284,7 +286,7 @@ if __name__ == '__main__':
                 use_rl = True
                 switch_to_rl = True
                 patience = 0
-                optim = Adam(model.parameters(), lr=5e-6)
+                optim = Adam(model.parameters(), lr=args.lr_scst)
                 print("Switching to RL")
             else:
                 print('patience reached.')

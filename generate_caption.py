@@ -1,21 +1,16 @@
 """
-Script para gerar legendas a partir de uma única imagem.
+Script para gerar legendas a partir de uma unica imagem.
 
 Fluxo:
   1. Carrega a imagem
-  2. Extrai features visuais (grid 7x7 via ResNet-101 → tensor 49x2048)
+  2. Extrai features visuais (Faster R-CNN + ResNet-101) - mesmo pipeline do treino
   3. Passa as features pelo modelo Meshed-Memory Transformer
-  4. Decodifica os tokens gerados em texto legível
+  4. Decodifica os tokens via beam search (igual ao test.py)
 
 Uso:
-    python generate_caption.py --image caminho/para/imagem.jpg
-
-Opções extras:
-    --model_path    Caminho do checkpoint (.pth)   [default: saved_models/m2_transformer_best.pth]
-    --vocab_path    Caminho do vocabulário (.pkl)   [default: vocab.pkl]
-    --beam_size     Tamanho do beam search          [default: 5]
-    --max_len       Comprimento máximo da legenda   [default: 20]
-    --device        cuda ou cpu (auto-detecta)
+    python generate_caption.py --image caminho/para/imagem.jpg \
+        --model_path saved_models/m2_transformer_v4_best.pth \
+        --vocab_path vocab_m2_transformer_v4.pkl
 """
 
 import argparse
@@ -28,6 +23,7 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from torchvision import models, transforms
+from torchvision.models.detection import fasterrcnn_resnet50_fpn, FasterRCNN_ResNet50_FPN_Weights
 
 from models.transformer import (
     Transformer,
@@ -39,67 +35,132 @@ from data import TextField
 
 
 # ---------------------------------------------------------------------------
-#  Extração de features
+#  Extracao de features (mesmo pipeline do extract_features_from_images.py)
 # ---------------------------------------------------------------------------
 IMAGENET_NORMALIZE = transforms.Normalize(
     mean=[0.485, 0.456, 0.406],
     std=[0.229, 0.224, 0.225],
 )
 
-GRID_TRANSFORM = transforms.Compose([
-    transforms.Resize((448, 448)),
-    transforms.ToTensor(),
-    IMAGENET_NORMALIZE,
-])
-
 
 def build_resnet101_backbone(device):
-    """Constrói backbone ResNet-101 (até layer4) para features 2048-d."""
+    """Constroi backbone ResNet-101 (ate layer4) + AdaptiveAvgPool para features 2048-d."""
     resnet = models.resnet101(weights=models.ResNet101_Weights.DEFAULT)
     backbone = nn.Sequential(
         resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool,
         resnet.layer1, resnet.layer2, resnet.layer3, resnet.layer4,
     )
+    pool = nn.AdaptiveAvgPool2d((1, 1))
     backbone.eval().to(device)
+    pool.to(device)
     del resnet
     gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
-    return backbone
+    return backbone, pool
 
 
-def extract_features(image_path, backbone, device, max_detections=50):
+def build_detector(device):
+    """Constroi Faster R-CNN para deteccao de regioes."""
+    weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
+    model = fasterrcnn_resnet50_fpn(weights=weights)
+    model.eval().to(device)
+    return model
+
+
+def extract_features(image_path, backbone, pool, detector, device,
+                     max_detections=50, score_threshold=0.2):
     """
-    Extrai grid features de uma imagem usando ResNet-101.
-    Retorna tensor (1, max_detections, 2048) compatível com o modelo.
+    Extrai region features de uma imagem - mesmo pipeline usado para gerar
+    o HDF5 de treino (extract_features_from_images.py modo regions).
+
+    1. Faster R-CNN detecta bounding boxes
+    2. Cada regiao e cropada, redimensionada (224x224) e passa pela ResNet-101
+    3. Retorna tensor (1, max_detections, 2048) com padding se necessario
     """
+    CROP_BATCH_SIZE = 16
+
     img = Image.open(image_path).convert("RGB")
-    img_tensor = GRID_TRANSFORM(img).unsqueeze(0).to(device)  # (1, 3, 448, 448)
+    img_tensor = transforms.ToTensor()(img)  # (3, H, W), valores [0,1]
 
-    adaptive_pool = nn.AdaptiveAvgPool2d((7, 7)).to(device)
-
+    # --- 1. Detecta regioes ---
     with torch.no_grad():
-        feat = backbone(img_tensor)       # (1, 2048, H', W')
-        feat = adaptive_pool(feat)        # (1, 2048, 7, 7)
-        feat = feat.view(1, 2048, 49)     # (1, 2048, 49)
-        feat = feat.permute(0, 2, 1)      # (1, 49, 2048)
+        detections = detector([img_tensor.to(device)])
 
-    # Ajusta para max_detections (padding com zeros se necessário)
-    num_regions = feat.shape[1]  # 49
-    if num_regions < max_detections:
-        padding = torch.zeros(1, max_detections - num_regions, 2048, device=device)
-        feat = torch.cat([feat, padding], dim=1)
-    elif num_regions > max_detections:
-        feat = feat[:, :max_detections, :]
+    det = detections[0]
+    boxes = det["boxes"].cpu().numpy()
+    scores = det["scores"].cpu().numpy()
 
-    return feat  # (1, max_detections, 2048)
+    # Filtra por score
+    keep = scores >= score_threshold
+    boxes = boxes[keep]
+    scores = scores[keep]
+
+    # Limita deteccoes (top-k por score)
+    if len(scores) > max_detections:
+        top_idx = np.argsort(scores)[::-1][:max_detections]
+        boxes = boxes[top_idx]
+
+    # --- 2. Cropa regioes e extrai features via ResNet-101 ---
+    _, H, W = img_tensor.shape
+
+    if len(boxes) == 0:
+        # Sem deteccoes: feature global da imagem inteira
+        crop = transforms.Resize((224, 224))(img_tensor)
+        crop = IMAGENET_NORMALIZE(crop).unsqueeze(0).to(device)
+        with torch.no_grad():
+            features = pool(backbone(crop)).squeeze(-1).squeeze(-1)
+        features = features.cpu().numpy()
+    else:
+        crops = []
+        for box in boxes:
+            x1, y1, x2, y2 = box.astype(int)
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(W, x2), min(H, y2)
+            if x2 <= x1 or y2 <= y1:
+                continue
+            crop = img_tensor[:, y1:y2, x1:x2]
+            crop = transforms.Resize((224, 224))(crop)
+            crop = IMAGENET_NORMALIZE(crop)
+            crops.append(crop)
+
+        if len(crops) == 0:
+            crop = transforms.Resize((224, 224))(img_tensor)
+            crop = IMAGENET_NORMALIZE(crop).unsqueeze(0).to(device)
+            with torch.no_grad():
+                features = pool(backbone(crop)).squeeze(-1).squeeze(-1)
+            features = features.cpu().numpy()
+        else:
+            all_feats = []
+            for start in range(0, len(crops), CROP_BATCH_SIZE):
+                batch = torch.stack(crops[start:start + CROP_BATCH_SIZE]).to(device)
+                with torch.no_grad():
+                    feat = pool(backbone(batch)).squeeze(-1).squeeze(-1)
+                all_feats.append(feat.cpu().numpy())
+                del batch, feat
+            features = np.concatenate(all_feats, axis=0)
+
+    # --- 3. Padding/truncamento para (max_detections, 2048) ---
+    if features.ndim == 1:
+        features = features.reshape(1, -1)
+
+    delta = max_detections - features.shape[0]
+    if delta > 0:
+        features = np.concatenate([features, np.zeros((delta, features.shape[1]))], axis=0)
+    elif delta < 0:
+        features = features[:max_detections]
+
+    return torch.tensor(features, dtype=torch.float32, device=device).unsqueeze(0)
 
 
 # ---------------------------------------------------------------------------
-#  Geração de legenda
+#  Geracao de legenda (igual ao test.py)
 # ---------------------------------------------------------------------------
 def generate_caption(model, features, text_field, beam_size=5, max_len=20):
-    """Gera legenda via beam search e decodifica os tokens."""
+    """
+    Gera legenda via beam search e decodifica os tokens.
+    Mesmo fluxo de predict_captions() do test.py.
+    """
     model.eval()
     with torch.no_grad():
         out, _ = model.beam_search(
@@ -109,10 +170,9 @@ def generate_caption(model, features, text_field, beam_size=5, max_len=20):
             beam_size,
             out_size=1,
         )
-    # Decodifica tokens → palavras
-    caption = text_field.decode(out, join_words=False)
-    # Remove duplicatas consecutivas (mesmo tratamento do test.py)
-    caption = caption[0]  # pega a primeira (e única) do batch
+    # Decodifica tokens -> palavras (igual test.py)
+    caps_gen = text_field.decode(out, join_words=False)
+    caption = caps_gen[0]
     caption = ' '.join([k for k, g in itertools.groupby(caption)])
     return caption.strip()
 
@@ -134,7 +194,7 @@ def main():
     )
     parser.add_argument(
         "--vocab_path", type=str, default="vocab_m2_transformer.pkl",
-        help="Caminho do arquivo de vocabulário (.pkl)",
+        help="Caminho do arquivo de vocabulario (.pkl)",
     )
     parser.add_argument(
         "--beam_size", type=int, default=5,
@@ -142,15 +202,19 @@ def main():
     )
     parser.add_argument(
         "--max_len", type=int, default=20,
-        help="Número máximo de tokens na legenda (default: 20)",
+        help="Numero maximo de tokens na legenda (default: 20)",
+    )
+    parser.add_argument(
+        "--score_threshold", type=float, default=0.2,
+        help="Score minimo do Faster R-CNN para deteccoes (default: 0.2)",
     )
     parser.add_argument(
         "--max_detections", type=int, default=50,
-        help="Número de regiões visuais (default: 50, compatível com treino)",
+        help="Numero maximo de regioes visuais (default: 50)",
     )
     parser.add_argument(
         "--device", type=str, default=None,
-        help="Device: 'cuda' ou 'cpu'. Auto-detecta por padrão.",
+        help="Device: 'cuda' ou 'cpu'. Auto-detecta por padrao.",
     )
     args = parser.parse_args()
 
@@ -161,14 +225,14 @@ def main():
         device = torch.device(args.device)
     print(f"Usando device: {device}")
 
-    # --- Vocabulário ---
-    print(f"Carregando vocabulário de: {args.vocab_path}")
+    # --- Vocabulario ---
+    print(f"Carregando vocabulario de: {args.vocab_path}")
     text_field = TextField(
         init_token='<bos>', eos_token='<eos>', lower=True,
         tokenize='spacy', remove_punctuation=True, nopoints=False,
     )
     text_field.vocab = pickle.load(open(args.vocab_path, 'rb'))
-    print(f"Vocabulário carregado ({len(text_field.vocab)} tokens)")
+    print(f"Vocabulario carregado ({len(text_field.vocab)} tokens)")
 
     # --- Modelo ---
     print(f"Carregando modelo de: {args.model_path}")
@@ -188,19 +252,25 @@ def main():
     model.eval()
     print("Modelo carregado com sucesso!")
 
-    # --- Extração de features ---
-    print("Carregando backbone ResNet-101 para extração de features...")
-    backbone = build_resnet101_backbone(device)
+    # --- Extracao de features (Faster R-CNN + ResNet-101) ---
+    print("Carregando Faster R-CNN...")
+    detector = build_detector(device)
+    print("Carregando backbone ResNet-101...")
+    backbone, pool = build_resnet101_backbone(device)
     print(f"Extraindo features da imagem: {args.image}")
-    features = extract_features(args.image, backbone, device, args.max_detections)
+    features = extract_features(
+        args.image, backbone, pool, detector, device,
+        max_detections=args.max_detections,
+        score_threshold=args.score_threshold,
+    )
 
-    # Libera backbone (não é mais necessário)
-    del backbone
+    # Libera modelos de extracao
+    del detector, backbone, pool
     gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
 
-    # --- Geração de legenda ---
+    # --- Geracao de legenda ---
     print("Gerando legenda...")
     caption = generate_caption(
         model, features, text_field,
