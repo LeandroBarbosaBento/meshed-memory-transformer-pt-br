@@ -1,5 +1,8 @@
-# M²: Meshed-Memory Transformer
-This repository contains the reference code for the paper _[Meshed-Memory Transformer for Image Captioning](https://arxiv.org/abs/1912.08226)_ (CVPR 2020).
+# M²: Meshed-Memory Transformer PT-BR
+
+This is an updated version of M² for PT-BR. 
+
+The original repository contains the reference code for the paper _[Meshed-Memory Transformer for Image Captioning](https://arxiv.org/abs/1912.08226)_ (CVPR 2020).
 
 Please cite with the following BibTeX:
 
