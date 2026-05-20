@@ -52,7 +52,7 @@ def evaluate_metrics(model, dataloader, text_field):
         for it, (images, caps_gt) in enumerate(iter(dataloader)):
             images = images.to(device)
             with torch.no_grad():
-                out, _ = model.beam_search(images, 20, text_field.vocab.stoi['<eos>'], 5, out_size=1)
+                out, _ = model.beam_search(images, args.max_len, text_field.vocab.stoi['<eos>'], 5, out_size=1)
             caps_gen = text_field.decode(out, join_words=False)
             for i, (gts_i, gen_i) in enumerate(zip(caps_gt, caps_gen)):
                 gen_i = ' '.join([k for k, g in itertools.groupby(gen_i)])
@@ -100,7 +100,7 @@ def train_scst(model, dataloader, optim, cider, text_field):
     running_reward_baseline = .0
     model.train()
     running_loss = .0
-    seq_len = 20
+    seq_len = args.max_len
     beam_size = 5
 
     with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:
@@ -152,8 +152,19 @@ if __name__ == '__main__':
     parser.add_argument('--features_path', type=str)
     parser.add_argument('--annotation_folder', type=str)
     parser.add_argument('--logs_folder', type=str, default='tensorboard_logs')
+    parser.add_argument('--max_len', type=int, default=20,
+                        help='Tamanho máximo da legenda gerada durante treino e avaliação. Default: 20')
     args = parser.parse_args()
     print(args)
+
+    """ 
+        max_caption_length = 35
+        batch_size = 32
+        epochs = 30
+        beam_size = 5
+        dropout = 0.1
+        label_smoothing = 0.1        
+    """
 
     print('Meshed-Memory Transformer Training')
 

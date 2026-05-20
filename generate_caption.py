@@ -69,7 +69,7 @@ def build_detector(device):
 
 
 def extract_features(image_path, backbone, pool, detector, device,
-                     max_detections=50, score_threshold=0.01):
+                     max_detections=50, score_threshold=0.2):
     """
     Extrai region features de uma imagem - mesmo pipeline usado para gerar
     o HDF5 de treino (extract_features_from_images.py modo regions).
@@ -205,8 +205,8 @@ def main():
         help="Numero maximo de tokens na legenda (default: 20)",
     )
     parser.add_argument(
-        "--score_threshold", type=float, default=0.01,
-        help="Score minimo do Faster R-CNN para deteccoes (default: 0.01)",
+        "--score_threshold", type=float, default=0.2,
+        help="Score minimo do Faster R-CNN para deteccoes (default: 0.2)",
     )
     parser.add_argument(
         "--max_detections", type=int, default=50,
@@ -227,6 +227,7 @@ def main():
 
     # --- Vocabulario ---
     print(f"Carregando vocabulario de: {args.vocab_path}")
+    
     text_field = TextField(
         init_token='<bos>', eos_token='<eos>', lower=True,
         tokenize='spacy', remove_punctuation=True, nopoints=False,
