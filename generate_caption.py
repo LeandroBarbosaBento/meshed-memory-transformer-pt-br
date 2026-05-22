@@ -173,6 +173,12 @@ def generate_caption(model, features, text_field, beam_size=5, max_len=20):
     # Decodifica tokens -> palavras (igual test.py)
     caps_gen = text_field.decode(out, join_words=False)
     caption = caps_gen[0]
+
+
+    print(f"TESTE:  {caption}")
+
+
+
     caption = ' '.join([k for k, g in itertools.groupby(caption)])
     return caption.strip()
 
