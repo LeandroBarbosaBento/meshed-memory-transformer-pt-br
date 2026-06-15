@@ -55,6 +55,19 @@ images = [
     "pessoa_aviao.jpg",
     "pessoas_cama.jpg",
     "senhor.png",
+    "free/criancas_cachorro.png",
+    "free/gato.png",
+    "free/gato_mesa.png",
+    "free/homem_cavalgando.png",
+    "free/homem_cavalo_cachorro.png",
+    "free/homem_computador_celular.png",
+    "free/homem_computador_grama.png",
+    "free/homem_mulher_celular.png",
+    "free/mulher_cachorro.png",
+    "free/mulher_computador.png",
+    "free/mulher_gato.png",
+    "free/mulher_lendo.png",
+    "free/mulheres_celular_praia.png",
 ]
 
 
